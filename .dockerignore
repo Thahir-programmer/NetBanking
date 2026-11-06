@@ -1,0 +1,13 @@
+# Secrets must never be baked into an image
+.env
+.env.*
+!.env.example
+
+# Build output, VCS and tooling are not needed inside the build context
+target/
+.git/
+.gitignore
+.vscode/
+.idea/
+HELP.md
+*.log
