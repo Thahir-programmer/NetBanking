@@ -6,7 +6,9 @@ A banking REST API built to answer one question: **how do you keep money correct
 
 Users register, get an account, and can deposit, withdraw and transfer. An admin can freeze accounts. The interesting part is the backend: transactions, locking, safe retries, and tests that prove it holds up under concurrency.
 
-**Stack:** Java 17 · Spring Boot 4.1 · Spring Security (JWT) · Spring Data JPA / Hibernate · PostgreSQL · Testcontainers · Docker · GitHub Actions
+**Live demo:** https://netbanking-44es.onrender.com (free hosting: the first request after a quiet period can take about a minute while it wakes up). Register a customer, deposit, and send money to a second account.
+
+**Stack:** Java 17 · Spring Boot 4.1 · Spring Security (JWT) · Spring Data JPA / Hibernate · PostgreSQL · plain HTML/CSS/JS frontend · Testcontainers · Docker · GitHub Actions · Render + Neon
 
 ## Features
 
@@ -16,6 +18,7 @@ Users register, get an account, and can deposit, withdraw and transfer. An admin
 - Paged transaction history
 - Admin role: list all accounts, freeze and unfreeze an account
 - Safe retries: a transfer sent twice with the same `Idempotency-Key` moves money once
+- A small web UI: login and register, dashboard, transfer, history, and an admin page
 
 ## Run it
 
@@ -26,7 +29,7 @@ cp .env.example .env        # then set JWT_SECRET (32+ characters) in .env
 docker compose up --build
 ```
 
-The API is then on `http://localhost:8080`. The compose database is throwaway; `docker compose down -v` deletes it.
+The app is then on `http://localhost:8080`: open it in a browser for the web UI, or call the API directly. The compose database is throwaway; `docker compose down -v` deletes it.
 
 **Without Docker.** You need Java 17 and a PostgreSQL database:
 
@@ -91,9 +94,28 @@ Errors are JSON with a status and message: `400` validation, `401` bad or missin
 - Wrong email and wrong password return the identical `401`, so attackers cannot discover which emails exist.
 - Freeze takes the same row lock as transfers, so a freeze cannot race an in-flight transfer.
 
+## Frontend
+
+Deliberately simple: plain HTML, CSS and JavaScript in `src/main/resources/static`, served by the same Spring Boot app (one deploy, no CORS). The backend is the point of the project; the UI exists so the behaviour can be seen and clicked.
+
+| Page | What it does |
+|---|---|
+| `index.html` | Log in or register (with a "Show password" option) |
+| `dashboard.html` | Balance, deposit, withdraw |
+| `transfer.html` | Send money to an account number |
+| `history.html` | Paged history; money in is green, money out is red |
+| `admin.html` | List accounts, freeze and unfreeze (admins only) |
+
+Design points worth knowing:
+
+- **Safe retries in the browser.** The transfer page creates one `Idempotency-Key` per intended transfer. If the outcome is uncertain (network drop, server error, conflict) the retry reuses the same key, so the server replays the first result instead of sending money twice. A different recipient or amount is a new transfer and gets a new key. After an uncertain failure it reloads the real balance instead of showing a stale one.
+- **No `innerHTML`.** The JWT is kept in `localStorage`, so any injected script could read it. Every page therefore builds its DOM with `textContent` only. This was checked by planting a hostile `<img onerror=...>` value as an owner email and confirming the admin table shows it as plain text.
+- **The UI is not the security boundary.** Hiding the Admin link, or redirecting a non-admin away from `admin.html`, is convenience. The server checks the token signature and the role on every `/api/admin/**` call.
+- **Admins have no bank account.** After login they land on the Admin page.
+
 ## Tests
 
-56 tests, run on every push by GitHub Actions.
+56 tests, run on every push by GitHub Actions. They cover the backend; the frontend was checked by hand in a browser.
 
 ```bash
 ./mvnw test        # needs Docker running (Testcontainers starts a real PostgreSQL)
@@ -118,6 +140,7 @@ src/main/java/com/thahirudeen/netbanking/
   config/       security config, JWT, admin seeding
   common/       exceptions and the global error handler
   user/         user entity and roles
+src/main/resources/static/   the web UI (HTML, CSS, JS)
 ```
 
 Each feature follows controller, service, repository, entity.
@@ -129,3 +152,5 @@ Each feature follows controller, service, repository, entity.
 - Deposit and withdraw do not take an idempotency key yet (transfers do).
 - Schema is created by Hibernate (`ddl-auto`). Fix: Flyway migrations.
 - No rate limiting on login.
+- The token is stored in `localStorage`, which survives a refresh but is readable by any script on the page. It is mitigated by never inserting server text as HTML. Fix: an `HttpOnly` cookie, with CSRF protection added back.
+- The frontend has no automated tests. Fix: browser tests (for example Playwright) run in CI.
