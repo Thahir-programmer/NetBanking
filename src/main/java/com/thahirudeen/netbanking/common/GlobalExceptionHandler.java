@@ -43,6 +43,11 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), null);
     }
 
+    @ExceptionHandler(InvalidTransferException.class)
+    public ResponseEntity<Map<String, Object>> invalidTransfer(InvalidTransferException ex) {
+        return body(HttpStatus.BAD_REQUEST, ex.getMessage(), null);
+    }
+
     @ExceptionHandler(AccountFrozenException.class)
     public ResponseEntity<Map<String, Object>> frozen(AccountFrozenException ex) {
         return body(HttpStatus.FORBIDDEN, ex.getMessage(), null);
