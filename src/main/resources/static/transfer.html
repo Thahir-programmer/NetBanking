@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetBanking: Transfer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main class="narrow">
+    <div class="card">
+      <h1>Send money</h1>
+      <p class="muted" id="balance-line">Loading your balance...</p>
+      <form id="transfer-form" class="hidden">
+        <label for="to">Recipient account number</label>
+        <input id="to" inputmode="numeric" maxlength="12" placeholder="12 digits" autocomplete="off" required>
+        <label for="amount">Amount</label>
+        <input id="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required>
+        <button type="submit">Send</button>
+      </form>
+      <div id="message" class="hidden"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    if (requireLogin()) {
+      renderNav('transfer.html');
+      loadBalance();
+    }
+
+    const form = document.getElementById('transfer-form');
+    const balanceLine = document.getElementById('balance-line');
+    const message = document.getElementById('message');
+    const toInput = document.getElementById('to');
+    const amountInput = document.getElementById('amount');
+
+    async function loadBalance() {
+      try {
+        const acc = await api('/api/accounts/me');
+        balanceLine.textContent = 'Available balance: ' + formatMoney(acc.balance) +
+          (acc.status === 'FROZEN' ? ' (account frozen: transfers are blocked)' : '');
+        form.classList.remove('hidden');
+      } catch (e) {
+        if (e.status === 404 && isAdmin()) {
+          balanceLine.textContent = 'Admin users do not have a bank account, so they cannot send money.';
+        } else {
+          balanceLine.textContent = e.message;
+        }
+      }
+    }
+
+    // ---- Idempotency key handling -------------------------------------------------
+    // One key identifies ONE intended transfer. If we are unsure whether the server processed
+    // a request (network drop, server error, conflict), the retry must reuse the same key so
+    // the server can replay the first result instead of moving money twice.
+    // A different recipient or amount is a different transfer, so it gets a new key.
+    let attempt = null; // { fingerprint, key }
+
+    function keyFor(to, amount) {
+      const fingerprint = to + '|' + amount;
+      if (!attempt || attempt.fingerprint !== fingerprint) {
+        attempt = { fingerprint, key: crypto.randomUUID() };
+      }
+      return attempt.key;
+    }
+
+    // After these outcomes we know for certain whether money moved, so the key is finished.
+    function outcomeIsCertain(status) {
+      return status !== 0 && status !== 409 && status < 500;
+    }
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      clearMessage(message);
+
+      const to = toInput.value.trim();
+      const amount = parseAmount(amountInput.value);
+      if (!/^\d{12}$/.test(to)) {
+        showMessage(message, 'Enter the 12-digit account number.', 'error');
+        return;
+      }
+      if (amount === null) {
+        showMessage(message, 'Enter an amount like 250 or 99.50 (at most 2 decimals).', 'error');
+        return;
+      }
+
+      const key = keyFor(to, amount);
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        const result = await api('/api/transfers', {
+          method: 'POST',
+          body: { toAccountNumber: to, amount },
+          idempotencyKey: key
+        });
+        attempt = null; // done: the next transfer is a new one
+        showMessage(message,
+          formatMoney(result.amount) + ' sent to account ' + result.toAccount +
+          ' (reference #' + result.transactionId + ').', 'ok');
+        toInput.value = '';
+        amountInput.value = '';
+        loadBalance();
+      } catch (e) {
+        if (outcomeIsCertain(e.status)) attempt = null;
+        const retryHint = outcomeIsCertain(e.status) ? '' : ' You can press Send again: it is safe, and money will not be sent twice.';
+        showMessage(message, e.message + retryHint, 'error');
+        // If we are unsure whether the money moved, show the real balance instead of a stale one
+        if (!outcomeIsCertain(e.status)) loadBalance();
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
