@@ -20,6 +20,7 @@
         <input id="login-email" type="email" autocomplete="username" required>
         <label for="login-password">Password</label>
         <input id="login-password" type="password" autocomplete="current-password" required>
+        <label class="check"><input type="checkbox" data-toggle="login-password"> Show password</label>
         <button type="submit">Log in</button>
       </form>
 
@@ -30,6 +31,7 @@
         <input id="reg-email" type="email" autocomplete="username" required>
         <label for="reg-password">Password (8 to 72 characters)</label>
         <input id="reg-password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+        <label class="check"><input type="checkbox" data-toggle="reg-password"> Show password</label>
         <button type="submit">Create account</button>
       </form>
 
@@ -76,6 +78,13 @@
         button.disabled = false;
       }
     }
+
+    // "Show password" checkboxes: switch the linked field between hidden and visible
+    document.querySelectorAll('input[data-toggle]').forEach((box) => {
+      box.addEventListener('change', () => {
+        document.getElementById(box.dataset.toggle).type = box.checked ? 'text' : 'password';
+      });
+    });
 
     loginForm.addEventListener('submit', (ev) => {
       ev.preventDefault();
