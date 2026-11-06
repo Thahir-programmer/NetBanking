@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetBanking: Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    main.wide { max-width: 960px; }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.92rem; vertical-align: middle; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.82rem; }
+    td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    td button { width: auto; margin-top: 0; padding: 0.3rem 0.8rem; font-size: 0.85rem; }
+    .pager { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+    .pager button { width: auto; margin-top: 0; padding: 0.45rem 1rem; }
+    .pager .muted { margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main class="wide">
+    <div class="card">
+      <h1>All accounts</h1>
+      <div id="message" class="hidden"></div>
+      <div class="scroll" id="content"><p class="muted">Loading...</p></div>
+      <div class="pager hidden" id="pager">
+        <button id="prev" class="secondary" type="button">Previous</button>
+        <span class="muted" id="page-label"></span>
+        <button id="next" class="secondary" type="button">Next</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    const requested = Number(new URLSearchParams(location.search).get('size'));
+    const PAGE_SIZE = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, 100) : 20;
+
+    const content = document.getElementById('content');
+    const message = document.getElementById('message');
+    const pager = document.getElementById('pager');
+    const prev = document.getElementById('prev');
+    const next = document.getElementById('next');
+    const pageLabel = document.getElementById('page-label');
+    let page = 0;
+
+    // Owner emails are typed by users, so every cell is filled with textContent, never innerHTML.
+    function fillRow(tr, a) {
+      tr.replaceChildren();
+      tr.appendChild(el('td', a.ownerEmail));
+      tr.appendChild(el('td', a.accountNumber));
+      tr.appendChild(el('td', formatMoney(a.balance), 'num'));
+
+      const status = el('td');
+      status.appendChild(el('span', a.status, a.status === 'FROZEN' ? 'badge frozen' : 'badge'));
+      tr.appendChild(status);
+
+      const action = el('td');
+      const frozen = a.status === 'FROZEN';
+      const button = el('button', frozen ? 'Unfreeze' : 'Freeze', frozen ? 'secondary' : 'danger');
+      button.addEventListener('click', () => toggle(a, tr, button));
+      action.appendChild(button);
+      tr.appendChild(action);
+    }
+
+    async function toggle(a, tr, button) {
+      clearMessage(message);
+      button.disabled = true;
+      const verb = a.status === 'FROZEN' ? 'unfreeze' : 'freeze';
+      try {
+        const updated = await api('/api/admin/accounts/' + a.id + '/' + verb, { method: 'POST' });
+        fillRow(tr, updated);
+        showMessage(message, 'Account ' + updated.accountNumber + ' is now ' + updated.status + '.', 'ok');
+      } catch (e) {
+        showMessage(message, e.message, 'error');
+        button.disabled = false;
+      }
+    }
+
+    async function load(wanted) {
+      let rows;
+      try {
+        rows = await api('/api/admin/accounts?page=' + wanted + '&size=' + PAGE_SIZE);
+      } catch (e) {
+        content.replaceChildren(el('p', e.message, 'msg error'));
+        return;
+      }
+
+      if (rows.length === 0 && wanted > 0) { // stepped past a full last page
+        next.disabled = true;
+        pageLabel.textContent = 'Page ' + (page + 1) + ' (last page)';
+        return;
+      }
+      page = wanted;
+
+      if (rows.length === 0) {
+        content.replaceChildren(el('p', 'No accounts yet.', 'muted'));
+        pager.classList.add('hidden');
+        return;
+      }
+
+      const head = el('tr');
+      head.append(el('th', 'Owner'), el('th', 'Account'), el('th', 'Balance', 'num'), el('th', 'Status'), el('th', ''));
+      const table = el('table');
+      table.append(el('thead'), el('tbody'));
+      table.tHead.appendChild(head);
+      rows.forEach((a) => {
+        const tr = el('tr');
+        fillRow(tr, a);
+        table.tBodies[0].appendChild(tr);
+      });
+      content.replaceChildren(table);
+
+      pager.classList.remove('hidden');
+      pageLabel.textContent = 'Page ' + (page + 1);
+      prev.disabled = page === 0;
+      next.disabled = rows.length < PAGE_SIZE;
+    }
+
+    prev.addEventListener('click', () => load(page - 1));
+    next.addEventListener('click', () => load(page + 1));
+
+    // Start only after everything above is defined.
+    // Convenience only: the server rejects every /api/admin call from a non-admin token anyway.
+    if (requireLogin()) {
+      if (!isAdmin()) {
+        location.replace('dashboard.html');
+      } else {
+        renderNav('admin.html');
+        load(0);
+      }
+    }
+  </script>
+</body>
+</html>

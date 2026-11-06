@@ -41,7 +41,7 @@
   <script>
     // Already signed in? Go straight to the dashboard.
     if (isLoggedIn()) {
-      location.replace('dashboard.html');
+      location.replace(homePage());
     } else {
       clearSession(); // drop any stale or expired token
     }
@@ -70,7 +70,7 @@
       try {
         const data = await api(path, { method: 'POST', body });
         saveSession(data.token, data.accountNumber);
-        location.replace('dashboard.html');
+        location.replace(homePage());
       } catch (e) {
         showMessage(message, e.message, 'error');
         button.disabled = false;

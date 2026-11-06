@@ -25,11 +25,6 @@
 
   <script src="app.js"></script>
   <script>
-    if (requireLogin()) {
-      renderNav('transfer.html');
-      loadBalance();
-    }
-
     const form = document.getElementById('transfer-form');
     const balanceLine = document.getElementById('balance-line');
     const message = document.getElementById('message');
@@ -112,6 +107,12 @@
         button.disabled = false;
       }
     });
+
+    // Start only after everything above is defined
+    if (requireLogin()) {
+      renderNav('transfer.html');
+      loadBalance();
+    }
   </script>
 </body>
 </html>

@@ -36,11 +36,6 @@
 
   <script src="app.js"></script>
   <script>
-    if (requireLogin()) {
-      renderNav('dashboard.html');
-      loadAccount();
-    }
-
     const card = document.getElementById('account-card');
     const actions = document.getElementById('actions');
     const message = document.getElementById('message');
@@ -95,6 +90,12 @@
     }
     handle('deposit-form', 'deposit-amount', '/api/accounts/deposit', 'Deposit');
     handle('withdraw-form', 'withdraw-amount', '/api/accounts/withdraw', 'Withdrawal');
+
+    // Start only after everything above is defined
+    if (requireLogin()) {
+      renderNav('dashboard.html');
+      loadAccount();
+    }
   </script>
 </body>
 </html>

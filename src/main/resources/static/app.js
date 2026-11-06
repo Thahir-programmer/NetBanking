@@ -46,6 +46,11 @@ function isAdmin() {
   return !!c && c.role === 'ADMIN';
 }
 
+// Where to go after login: admins have no bank account, so their home is the Admin page.
+function homePage() {
+  return isAdmin() ? 'admin.html' : 'dashboard.html';
+}
+
 // Call at the top of every page that needs a login.
 function requireLogin() {
   if (!isLoggedIn()) {
