@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetBanking: Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main>
+    <div class="card" id="account-card">
+      <p class="muted">Loading your account...</p>
+    </div>
+
+    <div class="row hidden" id="actions">
+      <div class="card">
+        <h2>Deposit</h2>
+        <form id="deposit-form">
+          <label for="deposit-amount">Amount</label>
+          <input id="deposit-amount" inputmode="decimal" placeholder="0.00" required>
+          <button type="submit">Deposit</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Withdraw</h2>
+        <form id="withdraw-form">
+          <label for="withdraw-amount">Amount</label>
+          <input id="withdraw-amount" inputmode="decimal" placeholder="0.00" required>
+          <button type="submit">Withdraw</button>
+        </form>
+      </div>
+    </div>
+    <div id="message" class="hidden"></div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    if (requireLogin()) {
+      renderNav('dashboard.html');
+      loadAccount();
+    }
+
+    const card = document.getElementById('account-card');
+    const actions = document.getElementById('actions');
+    const message = document.getElementById('message');
+
+    function showAccount(acc) {
+      card.replaceChildren(
+        el('p', 'Account ' + acc.accountNumber, 'muted'),
+        el('p', formatMoney(acc.balance), 'balance'),
+        el('span', acc.status, acc.status === 'FROZEN' ? 'badge frozen' : 'badge')
+      );
+      if (acc.status === 'FROZEN') {
+        card.appendChild(el('p', 'This account is frozen. You can see it but cannot move money.', 'muted'));
+      }
+    }
+
+    async function loadAccount() {
+      try {
+        showAccount(await api('/api/accounts/me'));
+        actions.classList.remove('hidden');
+      } catch (e) {
+        if (e.status === 404 && isAdmin()) {
+          card.replaceChildren(el('p', 'Admin users do not have a bank account. Use the Admin page.', 'muted'));
+        } else {
+          card.replaceChildren(el('p', e.message, 'msg error'));
+        }
+      }
+    }
+
+    function handle(formId, inputId, path, verb) {
+      const form = document.getElementById(formId);
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        clearMessage(message);
+        const input = document.getElementById(inputId);
+        const amount = parseAmount(input.value);
+        if (amount === null) {
+          showMessage(message, 'Enter an amount like 250 or 99.50 (at most 2 decimals).', 'error');
+          return;
+        }
+        const button = form.querySelector('button');
+        button.disabled = true;
+        try {
+          showAccount(await api(path, { method: 'POST', body: { amount } }));
+          showMessage(message, verb + ' of ' + formatMoney(amount) + ' successful.', 'ok');
+          input.value = '';
+        } catch (e) {
+          showMessage(message, e.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+    handle('deposit-form', 'deposit-amount', '/api/accounts/deposit', 'Deposit');
+    handle('withdraw-form', 'withdraw-amount', '/api/accounts/withdraw', 'Withdrawal');
+  </script>
+</body>
+</html>

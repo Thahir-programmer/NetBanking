@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetBanking: Sign in</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="narrow">
+    <div class="card">
+      <h1>NetBanking</h1>
+      <div class="tabs">
+        <button id="tab-login" type="button">Log in</button>
+        <button id="tab-register" type="button" class="secondary">Register</button>
+      </div>
+
+      <form id="login-form">
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" autocomplete="username" required>
+        <label for="login-password">Password</label>
+        <input id="login-password" type="password" autocomplete="current-password" required>
+        <button type="submit">Log in</button>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <label for="reg-name">Name</label>
+        <input id="reg-name" type="text" maxlength="100" autocomplete="name" required>
+        <label for="reg-email">Email</label>
+        <input id="reg-email" type="email" autocomplete="username" required>
+        <label for="reg-password">Password (8 to 72 characters)</label>
+        <input id="reg-password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+        <button type="submit">Create account</button>
+      </form>
+
+      <div id="message" class="hidden"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // Already signed in? Go straight to the dashboard.
+    if (isLoggedIn()) {
+      location.replace('dashboard.html');
+    } else {
+      clearSession(); // drop any stale or expired token
+    }
+
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const message = document.getElementById('message');
+
+    function showTab(which) {
+      const login = which === 'login';
+      loginForm.classList.toggle('hidden', !login);
+      registerForm.classList.toggle('hidden', login);
+      tabLogin.className = login ? '' : 'secondary';
+      tabRegister.className = login ? 'secondary' : '';
+      clearMessage(message);
+    }
+    tabLogin.addEventListener('click', () => showTab('login'));
+    tabRegister.addEventListener('click', () => showTab('register'));
+
+    async function submit(form, path, body) {
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      clearMessage(message);
+      try {
+        const data = await api(path, { method: 'POST', body });
+        saveSession(data.token, data.accountNumber);
+        location.replace('dashboard.html');
+      } catch (e) {
+        showMessage(message, e.message, 'error');
+        button.disabled = false;
+      }
+    }
+
+    loginForm.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submit(loginForm, '/api/auth/login', {
+        email: document.getElementById('login-email').value,
+        password: document.getElementById('login-password').value
+      });
+    });
+
+    registerForm.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submit(registerForm, '/api/auth/register', {
+        name: document.getElementById('reg-name').value,
+        email: document.getElementById('reg-email').value,
+        password: document.getElementById('reg-password').value
+      });
+    });
+  </script>
+</body>
+</html>
