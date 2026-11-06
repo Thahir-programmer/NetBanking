@@ -1,0 +1,31 @@
+name: CI
+
+# Run on every push to main and on every pull request
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The workflow only needs to read the code
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest   # a fresh Linux machine with Docker already installed
+    timeout-minutes: 15      # a hung test fails the run instead of running for hours
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven       # reuse downloaded dependencies between runs
+
+      # Starts a real Postgres in Docker for the integration and concurrency tests
+      - name: Run all tests
+        run: ./mvnw -B -ntp verify
