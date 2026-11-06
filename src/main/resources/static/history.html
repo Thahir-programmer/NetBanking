@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetBanking: History</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.6rem 0.4rem; border-bottom: 1px solid var(--border); font-size: 0.93rem; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.82rem; }
+    td.amount, th.amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    td.in { color: var(--ok); font-weight: 600; }
+    td.out { color: var(--danger); font-weight: 600; }
+    .pager { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+    .pager button { width: auto; margin-top: 0; padding: 0.45rem 1rem; }
+    .pager .muted { margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main>
+    <div class="card">
+      <h1>Transaction history</h1>
+      <div id="content"><p class="muted">Loading...</p></div>
+      <div class="pager hidden" id="pager">
+        <button id="prev" class="secondary" type="button">Previous</button>
+        <span class="muted" id="page-label"></span>
+        <button id="next" class="secondary" type="button">Next</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // ?size=N is accepted only so paging can be tried with a few rows; the server clamps it too.
+    const requested = Number(new URLSearchParams(location.search).get('size'));
+    const PAGE_SIZE = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, 50) : 10;
+
+    const content = document.getElementById('content');
+    const pager = document.getElementById('pager');
+    const prev = document.getElementById('prev');
+    const next = document.getElementById('next');
+    const pageLabel = document.getElementById('page-label');
+
+    let myAccount = null;
+    let page = 0;
+
+    if (requireLogin()) {
+      renderNav('history.html');
+      start();
+    }
+
+    async function start() {
+      try {
+        // The account number comes from the server, not from localStorage
+        myAccount = (await api('/api/accounts/me')).accountNumber;
+      } catch (e) {
+        if (e.status === 404 && isAdmin()) {
+          content.replaceChildren(el('p', 'Admin users do not have a bank account, so there is no history.', 'muted'));
+        } else {
+          content.replaceChildren(el('p', e.message, 'msg error'));
+        }
+        return;
+      }
+      load(0);
+    }
+
+    // Decides what a transaction means for ME by comparing the account numbers.
+    function describe(t) {
+      if (t.toAccount === myAccount && t.fromAccount === null) return { label: 'Deposit', direction: 'in' };
+      if (t.fromAccount === myAccount && t.toAccount === null) return { label: 'Withdrawal', direction: 'out' };
+      if (t.fromAccount === myAccount) return { label: 'Sent to ' + t.toAccount, direction: 'out' };
+      if (t.toAccount === myAccount) return { label: 'Received from ' + t.fromAccount, direction: 'in' };
+      return { label: t.type, direction: 'out' }; // should not happen: the server only returns my transactions
+    }
+
+    function row(t) {
+      const d = describe(t);
+      const tr = el('tr');
+      tr.appendChild(el('td', new Date(t.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })));
+      const what = el('td', d.label);
+      what.appendChild(el('div', 'Reference #' + t.id + (t.status !== 'SUCCESS' ? ' (' + t.status + ')' : ''), 'muted'));
+      tr.appendChild(what);
+      tr.appendChild(el('td', (d.direction === 'in' ? '+' : '-') + formatMoney(t.amount), 'amount ' + d.direction));
+      return tr;
+    }
+
+    async function load(wanted) {
+      let rows;
+      try {
+        rows = await api('/api/accounts/me/transactions?page=' + wanted + '&size=' + PAGE_SIZE);
+      } catch (e) {
+        content.replaceChildren(el('p', e.message, 'msg error'));
+        return;
+      }
+
+      // Stepped past the end (the previous page was exactly full): stay on the last real page
+      if (rows.length === 0 && wanted > 0) {
+        next.disabled = true;
+        pageLabel.textContent = 'Page ' + (page + 1) + ' (last page)';
+        return;
+      }
+      page = wanted;
+
+      if (rows.length === 0) {
+        content.replaceChildren(el('p', 'No transactions yet. Make a deposit on the Dashboard.', 'muted'));
+        pager.classList.add('hidden');
+        return;
+      }
+
+      const head = el('tr');
+      head.append(el('th', 'Date'), el('th', 'Details'), el('th', 'Amount', 'amount'));
+      const table = el('table');
+      table.append(el('thead'), el('tbody'));
+      table.tHead.appendChild(head);
+      rows.forEach((t) => table.tBodies[0].appendChild(row(t)));
+      content.replaceChildren(table);
+
+      pager.classList.remove('hidden');
+      pageLabel.textContent = 'Page ' + (page + 1);
+      prev.disabled = page === 0;
+      next.disabled = rows.length < PAGE_SIZE; // a short page is the last one
+    }
+
+    prev.addEventListener('click', () => load(page - 1));
+    next.addEventListener('click', () => load(page + 1));
+  </script>
+</body>
+</html>
