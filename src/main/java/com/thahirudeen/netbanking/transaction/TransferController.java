@@ -1,6 +1,5 @@
 package com.thahirudeen.netbanking.transaction;
 
-import com.thahirudeen.netbanking.account.AccountResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,9 +13,13 @@ public class TransferController {
 
     private final TransferService transferService;
 
-    // The source account always comes from the token, never from the body (IDOR prevention)
+    // The source account always comes from the token, never from the body (IDOR prevention).
+    // The client generates a unique Idempotency-Key per logical transfer and reuses it on retries.
     @PostMapping
-    public AccountResponse transfer(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody TransferRequest req) {
-        return transferService.transfer(Long.parseLong(jwt.getSubject()), req.toAccountNumber(), req.amount());
+    public TransferResponse transfer(@AuthenticationPrincipal Jwt jwt,
+                                     @RequestHeader("Idempotency-Key") String idempotencyKey,
+                                     @Valid @RequestBody TransferRequest req) {
+        return transferService.transfer(Long.parseLong(jwt.getSubject()),
+                req.toAccountNumber(), req.amount(), idempotencyKey);
     }
 }

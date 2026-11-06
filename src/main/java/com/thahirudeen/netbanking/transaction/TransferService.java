@@ -2,9 +2,9 @@ package com.thahirudeen.netbanking.transaction;
 
 import com.thahirudeen.netbanking.account.Account;
 import com.thahirudeen.netbanking.account.AccountRepository;
-import com.thahirudeen.netbanking.account.AccountResponse;
 import com.thahirudeen.netbanking.account.AccountStatus;
 import com.thahirudeen.netbanking.common.AccountFrozenException;
+import com.thahirudeen.netbanking.common.ConflictException;
 import com.thahirudeen.netbanking.common.InsufficientFundsException;
 import com.thahirudeen.netbanking.common.InvalidTransferException;
 import com.thahirudeen.netbanking.common.NotFoundException;
@@ -18,12 +18,18 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class TransferService {
 
+    private static final int MAX_KEY_LENGTH = 100;
+
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
 
     // Debit and credit are one database transaction: any exception rolls back both.
     @Transactional
-    public AccountResponse transfer(Long userId, String toAccountNumber, BigDecimal amount) {
+    public TransferResponse transfer(Long userId, String toAccountNumber, BigDecimal amount, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > MAX_KEY_LENGTH) {
+            throw new InvalidTransferException("Idempotency-Key header is required (max " + MAX_KEY_LENGTH + " chars)");
+        }
+
         // Ids only: loading full entities here would put stale copies in the session
         Long myId = accountRepository.findIdByUserId(userId)
                 .orElseThrow(() -> new NotFoundException("Account not found"));
@@ -42,6 +48,15 @@ public class TransferService {
         Account from = first.getId().equals(myId) ? first : second;
         Account to = from == first ? second : first;
 
+        // The key is scoped to the sender, so two users can use the same key value.
+        // Checked AFTER taking the sender's lock: concurrent requests with the same key
+        // queue on that lock, so the second one reliably sees the first one's committed row.
+        String referenceId = from.getId() + ":" + idempotencyKey;
+        var existing = transactionRepository.findByReferenceId(referenceId);
+        if (existing.isPresent()) {
+            return replay(existing.get(), to, amount);
+        }
+
         // Re-check on the locked, fresh rows: state may have changed while we waited
         if (from.getStatus() == AccountStatus.FROZEN || to.getStatus() == AccountStatus.FROZEN) {
             throw new AccountFrozenException();
@@ -59,9 +74,21 @@ public class TransferService {
         tx.setFromAccount(from);
         tx.setToAccount(to);
         tx.setStatus(TransactionStatus.SUCCESS);
+        tx.setReferenceId(referenceId);
         transactionRepository.save(tx);
 
-        return AccountResponse.from(from);
+        return TransferResponse.from(tx);
+    }
+
+    // Same key, same request: return the original result and move no money.
+    // Same key, different request: that is a client bug, so reject it.
+    private TransferResponse replay(Transaction original, Account to, BigDecimal amount) {
+        boolean sameRequest = original.getToAccount().getId().equals(to.getId())
+                && original.getAmount().compareTo(amount) == 0;
+        if (!sameRequest) {
+            throw new ConflictException("Idempotency-Key was already used for a different request");
+        }
+        return TransferResponse.from(original);
     }
 
     private Account lock(Long id) {
